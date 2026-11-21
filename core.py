@@ -1,9 +1,4 @@
 # core.py
-"""
-Ядро — обход репозитория, классификация файлов, валидация
-Kotlin/Spring Boot + Gradle, структурный «парсинг» .kt и поэтапный
-возврат прогресса. Передает управление в WorkflowEngine.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +9,7 @@ from typing import AsyncIterator
 
 from nodes.base import NodeContext
 from workflow_engine import WorkflowEngine
+from workflow_session import WorkflowSession
 
 
 class Stage(str, Enum):
@@ -85,12 +81,10 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return {"path": str(path), "error": "unreadable"}
-
     try:
         rel_path = path.relative_to(root).as_posix()
     except ValueError:
         rel_path = str(path)
-
     lines = text.splitlines()
     return {
         "path": str(rel_path),
@@ -102,92 +96,102 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
     }
 
 
-async def process_repo(url: str, graph_json: dict, mode: str = "sync") -> AsyncIterator[ProgressEvent]:
+def _apply(session: WorkflowSession, stage: Stage, percent: int, message: str) -> None:
+    """Единая точка обновления session — чтобы /status всегда видел актуальное."""
+    session.stage = stage.value
+    session.progress = percent
+    session.current_text = message
+
+
+async def process_repo(
+    url: str,
+    graph_json: list[dict],
+    session: WorkflowSession,
+) -> AsyncIterator[ProgressEvent]:
     """
-    Асинхронный генератор: отдаёт ProgressEvent по мере работы.
-    mode: "sync" (для кнопки, стримим в SSE) или "async" (для расписания, просто собираем результаты).
+    Асинхронный генератор: обновляет `session` по мере работы и отдаёт события.
+    Вызывающий код может как стримить события, так и просто пройтись по ним.
     """
     from repo_fetch import fetch_repo
 
-    yield ProgressEvent(Stage.CLONING, 5, f"Клонирую {url}")
+    _apply(session, Stage.CLONING, 5, f"Клонирую {url}")
+    yield ProgressEvent(Stage.CLONING, 5, session.current_text)
 
-    async with fetch_repo(url) as repo:
-        yield ProgressEvent(
-            Stage.WALKING, 15,
-            f"Найдено файлов: {len(repo.files)}",
-            {"run_id": repo.run_id, "mode": mode},
-        )
+    try:
+        async with fetch_repo(url) as repo:
+            session.repo_path = repo.root  # на случай падения до finally
 
-        layout = _classify(repo.files, repo.root)
-        layout.run_id = repo.run_id
+            _apply(session, Stage.WALKING, 15, f"Найдено файлов: {len(repo.files)}")
+            yield ProgressEvent(Stage.WALKING, 15, session.current_text,
+                                {"run_id": repo.run_id, "files": len(repo.files)})
 
-        yield ProgressEvent(
-            Stage.VALIDATING, 25,
-            "Проверяю, что это Kotlin/Spring Boot + Gradle",
-            {"counts": layout.counts(), "mode": mode},
-        )
+            layout = _classify(repo.files, repo.root)
+            layout.run_id = repo.run_id
 
-        if not layout.is_kotlin_spring_project:
-            yield ProgressEvent(
-                Stage.ERROR, 25,
-                "Репозиторий не похож на Kotlin/Spring Boot + Gradle",
-                {"counts": layout.counts(), "mode": mode},
-            )
-            return
+            _apply(session, Stage.VALIDATING, 25, "Проверяю, что это Kotlin/Spring Boot + Gradle")
+            yield ProgressEvent(Stage.VALIDATING, 25, session.current_text,
+                                {"counts": layout.counts()})
 
-        # Парсинг Kotlin
-        total = len(layout.kotlin_files)
-        parsed: list[dict] = []
-        for i, kt in enumerate(layout.kotlin_files, start=1):
-            parsed.append(await asyncio.to_thread(_parse_kotlin_file, kt, repo.root))
-            percent = 25 + int(20 * i / total) if total else 45
-            yield ProgressEvent(
-                Stage.PARSING, percent,
-                f"Парсинг Kotlin: {i}/{total}",
-                {"file": kt.name, "mode": mode},
-            )
-
-        # Формируем контекст для нод
-        context = NodeContext(
-            files=repo.files,
-            root=repo.root,
-            run_id=repo.run_id
-        )
-
-        # Инициализируем движок графа
-        db_path = Path(__file__).parent / "data" / "vulnerabilities.json"
-        engine = WorkflowEngine(db_path=db_path)
-
-        all_findings = []
-        
-        # Запускаем граф и транслируем его события
-        async for event in engine.execute_graph(graph_json, context):
-            if event["type"] == "node_start":
-                yield ProgressEvent(
-                    Stage.SCANNING, 50, 
-                    f"Запуск ноды: {event['node_type']}",
-                    {"node_id": event["node_id"], "mode": mode}
-                )
-            elif event["type"] == "node_result":
-                if event["findings"]:
-                    all_findings.extend(event["findings"])
-                    yield ProgressEvent(
-                        Stage.SCANNING, 60,
-                        f"Нода {event['node_id']} нашла {len(event['findings'])} проблем",
-                        {"node_id": event["node_id"], "mode": mode}
-                    )
-            elif event["type"] == "node_error":
-                yield ProgressEvent(Stage.ERROR, 0, f"Ошибка: {event['message']}")
+            if not layout.is_kotlin_spring_project:
+                session.status = "error"
+                session.error_text = "Репозиторий не похож на Kotlin/Spring Boot + Gradle"
+                _apply(session, Stage.ERROR, 25, session.error_text)
+                yield ProgressEvent(Stage.ERROR, 25, session.error_text,
+                                    {"counts": layout.counts()})
                 return
-            elif event["type"] == "workflow_done":
-                yield ProgressEvent(
-                    Stage.DONE, 100,
-                    f"Анализ завершен. Найдено проблем: {len(all_findings)}",
-                    {
+
+            # Парсинг Kotlin
+            total = len(layout.kotlin_files)
+            parsed: list[dict] = []
+            for i, kt in enumerate(layout.kotlin_files, start=1):
+                parsed.append(await asyncio.to_thread(_parse_kotlin_file, kt, repo.root))
+                percent = 25 + int(20 * i / total) if total else 45
+                msg = f"Парсинг Kotlin: {i}/{total}"
+                _apply(session, Stage.PARSING, percent, msg)
+                yield ProgressEvent(Stage.PARSING, percent, msg, {"file": kt.name})
+
+            context = NodeContext(files=repo.files, root=repo.root, run_id=repo.run_id)
+
+            db_path = Path(__file__).parent / "data" / "vulnerabilities.json"
+            engine = WorkflowEngine(db_path=db_path)
+
+            # Запускаем граф — события транслируем наружу и обновляем session
+            async for event in engine.execute_graph(graph_json, context, session):
+                if event["type"] == "node_start":
+                    msg = f"Запуск ноды: {event['node_type']}"
+                    _apply(session, Stage.SCANNING, 50, msg)
+                    yield ProgressEvent(Stage.SCANNING, 50, msg,
+                                        {"node_id": event["node_id"]})
+
+                elif event["type"] == "node_result":
+                    if event.get("findings"):
+                        msg = (f"Нода {event['node_id']} нашла "
+                               f"{len(event['findings'])} проблем "
+                               f"(всего {len(session.findings)})")
+                    else:
+                        msg = f"Нода {event['node_id']} завершена без находок"
+                    _apply(session, Stage.SCANNING, 60, msg)
+                    yield ProgressEvent(Stage.SCANNING, 60, msg,
+                                        {"node_id": event["node_id"]})
+
+                elif event["type"] == "node_error":
+                    session.status = "error"
+                    session.error_text = f"Ошибка: {event['message']}"
+                    _apply(session, Stage.ERROR, 0, session.error_text)
+                    yield ProgressEvent(Stage.ERROR, 0, session.error_text)
+                    return
+
+                elif event["type"] == "workflow_done":
+                    # WorkflowEngine уже положил final_data и выставил status=ended
+                    msg = f"Анализ завершен. Найдено проблем: {len(session.findings)}"
+                    _apply(session, Stage.DONE, 100, msg)
+                    yield ProgressEvent(Stage.DONE, 100, msg, {
                         "run_id": repo.run_id,
                         "counts": layout.counts(),
                         "parsed_kotlin": parsed,
-                        "findings": all_findings,
-                        "mode": mode
-                    },
-                )
+                        "findings": session.findings,
+                    })
+
+    finally:
+        # fetch_repo чистит папку сам; здесь только обнуляем ссылку
+        session.repo_path = None
