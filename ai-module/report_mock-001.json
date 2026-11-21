@@ -1,0 +1,159 @@
+{
+  "findings": [
+    {
+      "category": "SECRET",
+      "path": "src/main/kotlin/lab/repairdesk/integration/PartsImportSettings.kt",
+      "severity": "HIGH",
+      "description": "Обнаружен встроенный пароль в файле src/main/kotlin/lab/repairdesk/integration/PartsImportSettings.kt на строке 4. Значение замаскировано.",
+      "remediation": "Вынести учётные данные в переменные окружения или использовать менеджер секретов.",
+      "class": "password",
+      "line": 4,
+      "endLine": 4
+    },
+    {
+      "category": "SECRET",
+      "path": "src/main/kotlin/lab/repairdesk/integration/QuoteRequest.kt",
+      "severity": "MEDIUM",
+      "description": "Обнаружен встроенный ключ api в файле src/main/kotlin/lab/repairdesk/integration/QuoteRequest.kt на строке 7. Значение замаскировано.",
+      "remediation": "Вынести учётные данные в переменные окружения или использовать менеджер секретов.",
+      "class": "api-key",
+      "line": 7,
+      "endLine": 7
+    },
+    {
+      "category": "SECRET",
+      "path": "src/main/resources/application.yml",
+      "severity": "HIGH",
+      "description": "Обнаружен токен в конфигурации в файле src/main/resources/application.yml на строке 13. Значение замаскировано.",
+      "remediation": "Вынести учётные данные в переменные окружения или использовать менеджер секретов.",
+      "class": "configuration-token",
+      "line": 13,
+      "endLine": 13
+    },
+    {
+      "category": "SECRET",
+      "path": "src/main/kotlin/lab/repairdesk/integration/DepotStatusClient.kt",
+      "severity": "LOW",
+      "description": "Обнаружен встроенный секрет, используемый по умолчанию в файле src/main/kotlin/lab/repairdesk/integration/DepotStatusClient.kt на строке 8. Значение замаскировано.",
+      "remediation": "Вынести учётные данные в переменные окружения или использовать менеджер секретов.",
+      "class": "secret-fallback",
+      "line": 8,
+      "endLine": 8
+    },
+    {
+      "category": "SECRET",
+      "path": "src/main/kotlin/lab/repairdesk/integration/WarrantyHeaders.kt",
+      "severity": "MEDIUM",
+      "description": "Обнаружен токен, восстанавливаемый из исходников в файле src/main/kotlin/lab/repairdesk/integration/WarrantyHeaders.kt на строке 7. Значение замаскировано.",
+      "remediation": "Вынести учётные данные в переменные окружения или использовать менеджер секретов.",
+      "class": "recoverable-token",
+      "line": 7,
+      "endLine": 7
+    },
+    {
+      "category": "SCA",
+      "path": "build.gradle.kts",
+      "severity": "CRITICAL",
+      "description": "Библиотека org.apache.commons:commons-text версии 1.9 содержит известную уязвимость CVE-2022-42889.",
+      "remediation": "Обновить зависимость org.apache.commons:commons-text в build.gradle.kts до безопасной версии.",
+      "group": "org.apache.commons",
+      "artifact": "commons-text",
+      "version": "1.9",
+      "advisoryId": "CVE-2022-42889"
+    },
+    {
+      "category": "SCA",
+      "path": "build.gradle.kts",
+      "severity": "HIGH",
+      "description": "Библиотека org.jsoup:jsoup версии 1.14.1 содержит известную уязвимость CVE-2021-37714.",
+      "remediation": "Обновить зависимость org.jsoup:jsoup в build.gradle.kts до безопасной версии.",
+      "group": "org.jsoup",
+      "artifact": "jsoup",
+      "version": "1.14.1",
+      "advisoryId": "CVE-2021-37714"
+    },
+    {
+      "category": "SCA",
+      "path": "build.gradle.kts",
+      "severity": "MEDIUM",
+      "description": "Библиотека org.apache.commons:commons-compress версии 1.25.0 содержит известную уязвимость CVE-2024-25710.",
+      "remediation": "Обновить зависимость org.apache.commons:commons-compress в build.gradle.kts до безопасной версии.",
+      "group": "org.apache.commons",
+      "artifact": "commons-compress",
+      "version": "1.25.0",
+      "advisoryId": "CVE-2024-25710"
+    },
+    {
+      "category": "SCA",
+      "path": "build.gradle.kts",
+      "severity": "MEDIUM",
+      "description": "Библиотека commons-net:commons-net версии 3.8.0 содержит известную уязвимость CVE-2021-37533.",
+      "remediation": "Обновить зависимость commons-net:commons-net в build.gradle.kts до безопасной версии.",
+      "group": "commons-net",
+      "artifact": "commons-net",
+      "version": "3.8.0",
+      "advisoryId": "CVE-2021-37533"
+    },
+    {
+      "category": "SCA",
+      "path": "build.gradle.kts",
+      "severity": "HIGH",
+      "description": "Библиотека org.json:json версии 20230227 содержит известную уязвимость CVE-2023-5072.",
+      "remediation": "Обновить зависимость org.json:json в build.gradle.kts до безопасной версии.",
+      "group": "org.json",
+      "artifact": "json",
+      "version": "20230227",
+      "advisoryId": "CVE-2023-5072"
+    },
+    {
+      "category": "SAST",
+      "path": "src/main/kotlin/lab/repairdesk/repair/RepairLookupController.kt",
+      "severity": "HIGH",
+      "description": "SQL-инъекция через конкатенацию строк в файле src/main/kotlin/lab/repairdesk/repair/RepairLookupController.kt на строке 13.",
+      "remediation": "Использовать параметризованный запрос.",
+      "class": "sql-injection",
+      "line": 13,
+      "endLine": 13
+    },
+    {
+      "category": "SAST",
+      "path": "src/main/kotlin/lab/repairdesk/integration/SupplierHttpsClient.kt",
+      "severity": "MEDIUM",
+      "description": "Ослабленная проверка TLS-сертификатов в файле src/main/kotlin/lab/repairdesk/integration/SupplierHttpsClient.kt на строке 13.",
+      "remediation": "Удалить кастомный HostnameVerifier.",
+      "class": "tls-verification",
+      "line": 13,
+      "endLine": 13
+    },
+    {
+      "category": "SAST",
+      "path": "src/main/kotlin/lab/repairdesk/config/RepairCors.kt",
+      "severity": "MEDIUM",
+      "description": "Излишне широкий CORS в файле src/main/kotlin/lab/repairdesk/config/RepairCors.kt на строке 13.",
+      "remediation": "Указать конкретные доверенные домены.",
+      "class": "credentialed-cors",
+      "line": 13,
+      "endLine": 13
+    },
+    {
+      "category": "SAST",
+      "path": "src/main/kotlin/lab/repairdesk/config/RepairSecurity.kt",
+      "severity": "HIGH",
+      "description": "Ошибка проверки доступа к маршруту в файле src/main/kotlin/lab/repairdesk/config/RepairSecurity.kt на строке 18.",
+      "remediation": "Добавить .authenticated() в Spring Security.",
+      "class": "route-authorization",
+      "line": 18,
+      "endLine": 18
+    },
+    {
+      "category": "SAST",
+      "path": "src/main/kotlin/lab/repairdesk/repair/RepairTicketReader.kt",
+      "severity": "HIGH",
+      "description": "Ошибка проверки доступа к объекту в файле src/main/kotlin/lab/repairdesk/repair/RepairTicketReader.kt на строке 10.",
+      "remediation": "Добавить проверку прав доступа к объекту.",
+      "class": "object-authorization",
+      "line": 10,
+      "endLine": 10
+    }
+  ]
+}
