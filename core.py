@@ -87,7 +87,10 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
         return {"path": str(path), "error": "unreadable"}
 
     try:
+        # 1. Получаем относительный путь от корня клонирования
         rel_path = path.relative_to(root).as_posix()
+        # 2. Отрезаем название репозитория (всё до первого слеша включительно)
+        # Было: "training-project/src/main/..." -> Стало: "src/main/..."
         if "/" in rel_path:
             rel_path = rel_path.split("/", 1)[1]
     except ValueError:
@@ -95,7 +98,7 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
 
     lines = text.splitlines()
     return {
-        "path": str(rel_path),
+        "path": rel_path,  # <-- Используем уже очищенный путь
         "lines": len(lines),
         "bytes": len(text.encode("utf-8", errors="ignore")),
         "is_controller": "@RestController" in text or "@Controller" in text,
@@ -112,7 +115,6 @@ async def process_repo(
 ) -> AsyncIterator[ProgressEvent]:
     """
     Асинхронный генератор: отдаёт ProgressEvent по мере работы.
-    mode: "sync" (для кнопки, стримим в SSE) или "async" (для расписания, просто собираем результаты).
     """
     from repo_fetch import fetch_repo
 
@@ -151,7 +153,7 @@ async def process_repo(
             yield ProgressEvent(
                 Stage.PARSING, percent,
                 f"Парсинг Kotlin: {i}/{total}",
-                {"file": kt.name, "mode": mode},
+                {"file": parsed[-1]["path"], "mode": mode},
             )
 
         # Формируем контекст для нод
@@ -171,9 +173,19 @@ async def process_repo(
         # Поэтому мы просто await-им его, передав session третьим аргументом.
         await engine.execute_graph(graph_json, context, session)
 
-        # После выполнения engine.session уже обновлен, отдаем финальное событие
+        # После выполнения engine.session уже обновлен.
+        # Чистим пути в findings перед финальной отдачей.
         if session and session.final_data:
             findings = session.final_data.get("findings", [])
+
+            for finding in findings:
+                # Если в находке есть поле file (или path), очищаем его
+                for key in ("file", "path", "file_path"):
+                    if key in finding and isinstance(finding[key], str):
+                        file_path = finding[key]
+                        if "/" in file_path:
+                            finding[key] = file_path.split("/", 1)[1]
+
             yield ProgressEvent(
                 Stage.DONE, 100,
                 f"Анализ завершен. Найдено проблем: {len(findings)}",
@@ -181,7 +193,7 @@ async def process_repo(
                     "run_id": repo.run_id,
                     "counts": layout.counts(),
                     "parsed_kotlin": parsed,
-                    "findings": findings,
+                    "findings": findings,  # <-- Теперь пути здесь чистые
                     "mode": mode
                 },
             )
