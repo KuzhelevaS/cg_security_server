@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
+import zipfile
 
 #BASE_TMP = Path("/var/tmp/ai_security_workflow")
 BASE_TMP = Path(tempfile.gettempdir()) / "ai_security_workflow"
@@ -99,3 +100,30 @@ def clone_repo_only(url: str, timeout_s: int = 120) -> tuple[str, Path, list[Pat
 def cleanup_repo(run_dir: Path):
     import shutil
     shutil.rmtree(run_dir, ignore_errors=True)
+
+def clone_repo_only(url: str, timeout_s: int = 120) -> tuple[str, Path, list[Path]]:
+    _validate_url(url)
+    run_id, run_dir = _make_run_dir(url)
+    _clone_sync(url, run_dir, timeout_s)
+    files = _walk_filtered(run_dir)
+    return run_id, run_dir, files
+
+def extract_zip_only(zip_path: Path, timeout_s: int = 120) -> tuple[str, Path, list[Path]]:
+    run_id = uuid.uuid4().hex
+    short_hash = hashlib.sha256(str(zip_path).encode()).hexdigest()[:8]
+    dest_dir = BASE_TMP / f"zip_{short_hash}_{run_id}"
+    dest_dir.mkdir(parents=True, exist_ok=False)
+
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for member in zf.infolist():
+                extracted_path = Path(zf.extract(member, dest_dir)).resolve()
+                if not str(extracted_path).startswith(str(dest_dir.resolve())):
+                    raise ValueError(f"Опасный путь в архиве: {member.filename}")
+        files = _walk_filtered(dest_dir)
+        return run_id, dest_dir, files
+    except Exception:
+        import shutil
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        raise
+
