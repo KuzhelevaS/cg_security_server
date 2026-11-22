@@ -1,8 +1,6 @@
-# nodes/base.py
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any
 
 @dataclass
 class NodeContext:
@@ -10,18 +8,14 @@ class NodeContext:
     files: list[Path]       # Все доступные файлы проекта
     root: Path              # Корень репозитория (для относительных путей)
     run_id: str             # ID запуска
-    # Здесь в будущем появятся настройки ноды, выбранные пользователем
-    
+
 @dataclass
 class Finding:
-    """Единый формат результата для всех проверок (соответствует ТЗ)."""
-    rule_id: str
-    name: str
+    """Единый формат результата для всех проверок (строго 4 поля)."""
+    type: str               # "SAST", "SECRET" или "SCA"
+    line: int               # Номер строки
+    file: str               # Относительный путь (сырой, обрезка будет в core.py)
     severity: str           # CRITICAL, HIGH, MEDIUM, LOW
-    file: str               # Относительный путь
-    line: int
-    snippet: str            # Замаскированный кусок кода
-    raw_data: str = ""      # Сырые данные для LLM
 
 class BaseNode(ABC):
     """Абстрактный базовый класс для всех нод проверки."""
@@ -29,19 +23,13 @@ class BaseNode(ABC):
     @property
     @abstractmethod
     def node_type(self) -> str:
-        """Уникальный идентификатор ноды (например, 'secrets_scanner')."""
         pass
 
     @property
     @abstractmethod
     def display_name(self) -> str:
-        """Человекочитаемое имя для интерфейса."""
         pass
 
     @abstractmethod
     def run(self, context: NodeContext) -> list[Finding]:
-        """
-        Основной метод, который выполняет проверку.
-        Должен быть реализован в каждой дочерней ноде.
-        """
-        pass 
+        pass

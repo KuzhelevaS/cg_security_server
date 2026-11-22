@@ -1,4 +1,3 @@
-# core.py
 """
 Ядро — обход репозитория, классификация файлов, валидация
 Kotlin/Spring Boot + Gradle, структурный «парсинг» .kt и поэтапный
@@ -14,6 +13,7 @@ from typing import AsyncIterator
 
 from nodes.base import NodeContext
 from workflow_engine import WorkflowEngine
+from workflow_session import WorkflowSession
 
 
 class Stage(str, Enum):
@@ -88,6 +88,8 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
 
     try:
         rel_path = path.relative_to(root).as_posix()
+        if "/" in rel_path:
+            rel_path = rel_path.split("/", 1)[1]
     except ValueError:
         rel_path = str(path)
 
@@ -102,7 +104,12 @@ def _parse_kotlin_file(path: Path, root: Path) -> dict:
     }
 
 
-async def process_repo(url: str, graph_json: dict, mode: str = "sync") -> AsyncIterator[ProgressEvent]:
+async def process_repo(
+    url: str,
+    graph_json: list[dict],
+    session: WorkflowSession | None = None,
+    mode: str = "sync"
+) -> AsyncIterator[ProgressEvent]:
     """
     Асинхронный генератор: отдаёт ProgressEvent по мере работы.
     mode: "sync" (для кнопки, стримим в SSE) или "async" (для расписания, просто собираем результаты).
@@ -158,36 +165,23 @@ async def process_repo(url: str, graph_json: dict, mode: str = "sync") -> AsyncI
         db_path = Path(__file__).parent / "data" / "vulnerabilities.json"
         engine = WorkflowEngine(db_path=db_path)
 
-        all_findings = []
-        
-        # Запускаем граф и транслируем его события
-        async for event in engine.execute_graph(graph_json, context):
-            if event["type"] == "node_start":
-                yield ProgressEvent(
-                    Stage.SCANNING, 50, 
-                    f"Запуск ноды: {event['node_type']}",
-                    {"node_id": event["node_id"], "mode": mode}
-                )
-            elif event["type"] == "node_result":
-                if event["findings"]:
-                    all_findings.extend(event["findings"])
-                    yield ProgressEvent(
-                        Stage.SCANNING, 60,
-                        f"Нода {event['node_id']} нашла {len(event['findings'])} проблем",
-                        {"node_id": event["node_id"], "mode": mode}
-                    )
-            elif event["type"] == "node_error":
-                yield ProgressEvent(Stage.ERROR, 0, f"Ошибка: {event['message']}")
-                return
-            elif event["type"] == "workflow_done":
-                yield ProgressEvent(
-                    Stage.DONE, 100,
-                    f"Анализ завершен. Найдено проблем: {len(all_findings)}",
-                    {
-                        "run_id": repo.run_id,
-                        "counts": layout.counts(),
-                        "parsed_kotlin": parsed,
-                        "findings": all_findings,
-                        "mode": mode
-                    },
-                )
+        yield ProgressEvent(Stage.SCANNING, 50, "Запуск анализа графа уязвимостей")
+
+        # ВАЖНО: execute_graph НЕ является генератором, он сам обновляет session!
+        # Поэтому мы просто await-им его, передав session третьим аргументом.
+        await engine.execute_graph(graph_json, context, session)
+
+        # После выполнения engine.session уже обновлен, отдаем финальное событие
+        if session and session.final_data:
+            findings = session.final_data.get("findings", [])
+            yield ProgressEvent(
+                Stage.DONE, 100,
+                f"Анализ завершен. Найдено проблем: {len(findings)}",
+                {
+                    "run_id": repo.run_id,
+                    "counts": layout.counts(),
+                    "parsed_kotlin": parsed,
+                    "findings": findings,
+                    "mode": mode
+                },
+            )

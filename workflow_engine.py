@@ -2,7 +2,7 @@
 import asyncio
 from pathlib import Path
 from typing import Any
-from .workflow_session import WorkflowSession
+from workflow_session import WorkflowSession
 
 # Импорты наших нод
 from nodes.base import NodeContext
